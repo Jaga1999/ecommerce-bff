@@ -1,0 +1,273 @@
+{
+  "id": "ecommerce-realm",
+  "realm": "ecommerce-realm",
+  "enabled": true,
+  "displayName": "Ecommerce BFF Realm",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "passwordPolicy": "length(10) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1)",
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Administrator with full privileges",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "ecommerce-realm"
+      },
+      {
+        "name": "user",
+        "description": "Standard user",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "ecommerce-realm"
+      }
+    ],
+    "client": {}
+  },
+  "defaultRoles": [
+    "offline_access",
+    "uma_authorization",
+    "user"
+  ],
+  "users": [],
+  "clients": [
+    {
+      "clientId": "ecommerce-bff-client",
+      "name": "Ecommerce BFF Backend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "fullScopeAllowed": false,
+      "secret": "${KC_CLIENT_SECRET}",
+      "redirectUris": [
+        "http://localhost:${APP_PORT}/api/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:${APP_PORT}"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "roles",
+        "profile",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "roles",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "family name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "lastName",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "family_name",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "given name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "firstName",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "given_name",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "email verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "emailVerified",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email_verified",
+            "jsonType.label": "boolean",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "eventsEnabled": true,
+  "eventsListeners": [
+    "jboss-logging"
+  ],
+  "enabledEventTypes": [
+    "LOGIN",
+    "LOGIN_ERROR",
+    "LOGOUT",
+    "REGISTER",
+    "REGISTER_ERROR"
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "name": "default",
+        "subType": "default",
+        "providerId": "declarative-user-profile",
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"email\",\"required\":{\"roles\":[]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"firstName\",\"required\":{\"roles\":[]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"required\":{\"roles\":[]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}}]}"
+          ]
+        }
+      }
+    ]
+  },
+  "internationalizationEnabled": true,
+  "identityProviders": [
+    {
+      "alias": "google",
+      "providerId": "google",
+      "enabled": true,
+      "updateProfileFirstLoginMode": "off",
+      "trustEmail": true,
+      "storeToken": true,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${GOOGLE_CLIENT_ID}",
+        "clientSecret": "${GOOGLE_CLIENT_SECRET}",
+        "authorizationUrl": "https://accounts.google.com/o/oauth2/auth?prompt=select_account",
+        "tokenUrl": "https://oauth2.googleapis.com/token",
+        "defaultScope": "openid profile email",
+        "useJwksUrl": "true",
+        "redirectUri": "http://localhost:${KC_PORT}/realms/${KC_REALM}/broker/google/endpoint"
+      }
+    }
+  ],
+  "supportedLocales": [
+    "en"
+  ],
+  "defaultLocale": "en",
+  "accessTokenLifespanForImplicitFlow": 900,
+  "accessTokenLifespan": 1800,
+  "ssoSessionIdleTimeout": 3600,
+  "ssoSessionMaxLifespan": 43200,
+  "ssoSessionIdleTimeoutRememberMe": 604800,
+  "ssoSessionMaxLifespanRememberMe": 2592000,
+  "clientSessionIdleTimeout": 3600,
+  "clientSessionMaxLifespan": 36000,
+  "offlineSessionMaxLifespanEnabled": true,
+  "offlineSessionMaxLifespan": 5184000,
+  "sslRequired": "external",
+  "registrationEmailAsUsername": false
+}

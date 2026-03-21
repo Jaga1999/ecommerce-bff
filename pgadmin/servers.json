@@ -1,0 +1,22 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "App DB",
+      "Group": "Servers",
+      "Host": "ecommerce_app_db",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "ecommerce",
+      "SSLMode": "prefer"
+    },
+    "2": {
+      "Name": "Keycloak DB",
+      "Group": "Servers",
+      "Host": "keycloak-db",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "kc",
+      "SSLMode": "prefer"
+    }
+  }
+}

@@ -1,0 +1,166 @@
+services:
+  app-db:
+    image: postgres:16
+    container_name: ecommerce_app_db
+    environment:
+      POSTGRES_DB: ${APP_DB_NAME}
+      POSTGRES_USER: ${APP_DB_USER}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD}
+    ports:
+      - "${APP_DB_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${APP_DB_USER} -d ${APP_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - app-db-data:/var/lib/postgresql/data
+
+  keycloak-db:
+    image: postgres:16
+    container_name: keycloak_db
+    environment:
+      POSTGRES_DB: ${KC_DB_NAME}
+      POSTGRES_USER: ${KC_DB_USER}
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
+    ports:
+      - "${KC_DB_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KC_DB_USER} -d ${KC_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: bff_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis-data:/data
+
+  pgAdmin:
+    image: dpage/pgadmin4:8
+    container_name: pgAdmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "-O", "-", "-q", "http://localhost:80/misc/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      app-db:
+        condition: service_healthy
+      keycloak-db:
+        condition: service_healthy
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.0
+    container_name: keycloak
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KC_DB_NAME}
+      KC_DB_USERNAME: ${KC_DB_USER}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+      KC_PROXY_HEADERS: xforwarded
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      KC_REALM: ${KC_REALM}
+      KC_PORT: ${KC_PORT}
+      APP_PORT: ${APP_PORT}
+      KC_CLIENT_SECRET: ${KC_CLIENT_SECRET}
+    command:
+      - start-dev
+      - --hostname-strict=false
+      - --import-realm
+      - "-DAPP_PORT=${APP_PORT}"
+      - "-DKC_PORT=${KC_PORT}"
+      - "-DKC_REALM=${KC_REALM}"
+      - "-DKC_CLIENT_SECRET=${KC_CLIENT_SECRET}"
+      - "-DGOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
+      - "-DGOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}"
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    ports:
+      - "${KC_PORT}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q '1F90' /proc/net/tcp /proc/net/tcp6 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+  ecommerce-app:
+     build:
+       context: .
+       dockerfile: Dockerfile
+     container_name: ecommerce_app
+     environment:
+       NODE_ENV: ${NODE_ENV}
+       PORT: ${PORT}
+       APP_PORT: ${APP_PORT}
+       # BFF→Keycloak (inside Docker): use service name
+       APP_KEYCLOAK_SERVER_URL: http://keycloak:8080
+       # Browser→Keycloak: use localhost (host port mapping)
+       KC_EXTERNAL_URL: ${KC_EXTERNAL_URL}
+       DB_HOST: app-db
+       DB_PORT: 5432
+       DB_NAME: ${APP_DB_NAME}
+       DB_USER: ${APP_DB_USER}
+       DB_PASS: ${APP_DB_PASSWORD}
+       REDIS_HOST: redis
+       REDIS_PORT: 6379
+       KC_PORT: ${KC_PORT}
+       KC_REALM: ${KC_REALM}
+       KC_CLIENT_ID: ${KC_CLIENT_ID}
+       KC_CLIENT_SECRET: ${KC_CLIENT_SECRET}
+       KC_ADMIN_USER: ${KC_ADMIN_USER}
+       KC_ADMIN_PASS: ${KC_ADMIN_PASSWORD}
+       KC_ADMIN_CLIENT_ID: ${KC_ADMIN_CLIENT_ID}
+       SESSION_ID_HEADER: ${SESSION_ID_HEADER}
+       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME}
+       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+       FRONTEND_URL: ${FRONTEND_URL}
+       DASHBOARD_URL: ${DASHBOARD_URL}
+       BFF_CONTEXT_PATH: ${BFF_CONTEXT_PATH}
+       DB_MIGRATIONS_RUN: ${DB_MIGRATIONS_RUN}
+     ports:
+      - "${PORT}:${PORT}"
+     healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost ${PORT} || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+     depends_on:
+      app-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+volumes:
+  app-db-data:
+  keycloak-db-data:
+  redis-data:
+  pgadmin-data:
