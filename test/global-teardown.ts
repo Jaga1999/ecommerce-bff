@@ -4,12 +4,13 @@ export default async () => {
   console.log('\n--- Tearing Down Global Test Environment ---');
 
   // Suppress Redis socket errors that occur during container destruction
-  const errorHandler = (err: any) => {
-    const msg = err?.message || '';
+  const errorHandler = (err: unknown) => {
+    const error = err as { message?: string; code?: string };
+    const msg = error?.message || '';
     if (
       msg.includes('Socket closed unexpectedly') ||
       msg.includes('ECONNRESET') ||
-      err?.code === 'ERR_UNHANDLED_ERROR'
+      error?.code === 'ERR_UNHANDLED_ERROR'
     ) {
       return;
     }
@@ -29,7 +30,7 @@ export default async () => {
     try {
       await testEnv.stop();
       console.log('--- Global Test Environment Stopped ---\n');
-    } catch (error) {
+    } catch {
       // silence any direct teardown errors
     }
   }
