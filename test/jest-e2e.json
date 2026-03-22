@@ -12,5 +12,7 @@
   "moduleNameMapper": {
     "^uuid$": "uuid"
   },
-  "testTimeout": 120000
+  "testTimeout": 120000,
+  "globalSetup": "./global-setup.ts",
+  "globalTeardown": "./global-teardown.ts"
 }

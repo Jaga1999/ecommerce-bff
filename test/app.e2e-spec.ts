@@ -1,35 +1,18 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import cookieParser from 'cookie-parser';
-
+import { App as SupertestApp } from 'supertest/types';
 import { TestEnvironment } from './test-setup';
-import { createTestingModuleWithContainers } from './e2e-util';
+import { createAppWithContainers } from './e2e-util';
 
 describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication;
   let testEnv: TestEnvironment;
 
   beforeAll(async () => {
     testEnv = new TestEnvironment();
-    const moduleBuilder = await createTestingModuleWithContainers(testEnv);
-    const moduleFixture = await moduleBuilder.compile();
-
-    app = moduleFixture.createNestApplication();
-
-    // Mimic main.ts setup
-    app.setGlobalPrefix('api');
-    app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    await app.init();
+    app = await createAppWithContainers(testEnv);
   }, 120000);
 
   afterAll(async () => {
@@ -37,22 +20,28 @@ describe('AppController (e2e)', () => {
       const cacheManager = app.get<Cache>(CACHE_MANAGER);
       const redisStore = cacheManager as unknown as {
         store?: {
-          client?: { isOpen?: boolean; disconnect: () => Promise<void> };
+          client?: {
+            isOpen?: boolean;
+            disconnect: () => Promise<void>;
+            on: (event: string, cb: (err: any) => void) => void;
+          };
         };
       };
       const client = redisStore.store?.client;
-      if (client && client.isOpen) {
-        await client.disconnect();
+      if (client) {
+        client.on('error', () => {
+          /* ignore socket errors during teardown */
+        });
+        if (client.isOpen) {
+          await client.disconnect();
+        }
       }
       await app.close();
-    }
-    if (testEnv) {
-      await testEnv.stop();
     }
   });
 
   it('/api (GET) should return Hello World!', () => {
-    return request(app.getHttpServer())
+    return request(app.getHttpServer() as SupertestApp)
       .get('/api')
       .expect(200)
       .expect('Hello World!');

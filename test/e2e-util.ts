@@ -1,14 +1,42 @@
-import { Test, TestingModuleBuilder } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from '../src/app.module';
-import { TestEnvironment } from './test-setup';
+import { TestEnvironment, TestEnvValues } from './test-setup';
+import { MigrationService } from '../src/database/migration.service';
+import cookieParser from 'cookie-parser';
 
-export async function createTestingModuleWithContainers(
+export async function createAppWithContainers(
   testEnv: TestEnvironment,
-): Promise<TestingModuleBuilder> {
-  const envValues = await testEnv.start();
+): Promise<INestApplication> {
+  let envValues: TestEnvValues;
+  if (process.env.TEST_DB_HOST) {
+    // Containers already started by global setup
+    envValues = {
+      db: {
+        host: process.env.TEST_DB_HOST,
+        port: parseInt(process.env.TEST_DB_PORT || '5432'),
+        name: process.env.TEST_DB_NAME || 'ecommerce_app_test',
+        user: process.env.TEST_DB_USER || 'ecommerce',
+        pass: process.env.TEST_DB_PASS || 'change_me',
+      },
+      redis: {
+        host: process.env.TEST_REDIS_HOST || 'localhost',
+        port: parseInt(process.env.TEST_REDIS_PORT || '6379'),
+      },
+      keycloak: {
+        url: process.env.TEST_KEYCLOAK_URL || '',
+        adminUser: process.env.TEST_KEYCLOAK_ADMIN_USER || 'admin',
+        adminPass: process.env.TEST_KEYCLOAK_ADMIN_PASS || 'admin',
+      },
+    };
+    console.log('Using persistent test containers...');
+  } else {
+    // Fallback to starting new containers (per-test-file)
+    envValues = await testEnv.start();
+  }
 
-  return Test.createTestingModule({
+  const moduleFixture: TestingModule = await Test.createTestingModule({
     imports: [AppModule],
   })
     .overrideProvider(ConfigService)
@@ -28,6 +56,30 @@ export async function createTestingModuleWithContainers(
         KC_ADMIN_USER: envValues.keycloak.adminUser,
         KC_ADMIN_PASSWORD: envValues.keycloak.adminPass,
         DB_MIGRATIONS_RUN: 'true',
+        BFF_CONTEXT_PATH: 'api',
+        SWAGGER_PATH: 'docs',
       }),
-    );
+    )
+    .compile();
+
+  const app = moduleFixture.createNestApplication();
+
+  const prefix = 'api';
+  app.setGlobalPrefix(prefix);
+  app.use(cookieParser());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  await app.init();
+
+  // Run migrations
+  const migrationService = app.get(MigrationService);
+  await migrationService.runMigrations();
+
+  return app;
 }

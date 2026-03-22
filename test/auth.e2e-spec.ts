@@ -1,55 +1,22 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import cookieParser from 'cookie-parser';
-
+import { App as SupertestApp } from 'supertest/types';
 import { TestEnvironment } from './test-setup';
-import { createTestingModuleWithContainers } from './e2e-util';
-
-interface AuthResponse {
-  message?: string;
-  user?: {
-    username?: string;
-    email?: string;
-  };
-  username?: string;
-  email?: string;
-}
+import { createAppWithContainers } from './e2e-util';
+import {
+  LoginResponse,
+  AuthenticatedUser,
+} from '../src/auth/interfaces/auth.interface';
 
 describe('AuthController (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication;
   let testEnv: TestEnvironment;
-  let sessionCookie: string;
-
-  const testUser = {
-    username: `testuser_${Date.now()}`,
-    email: `testuser_${Date.now()}@example.com`,
-    password: 'Password@123',
-    firstName: 'Test',
-    lastName: 'User',
-  };
 
   beforeAll(async () => {
     testEnv = new TestEnvironment();
-    const moduleBuilder = await createTestingModuleWithContainers(testEnv);
-    const moduleFixture = await moduleBuilder.compile();
-
-    app = moduleFixture.createNestApplication();
-
-    // Setup identical to main.ts
-    app.setGlobalPrefix('api');
-    app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-
-    await app.init();
+    app = await createAppWithContainers(testEnv);
   }, 120000);
 
   afterAll(async () => {
@@ -57,52 +24,79 @@ describe('AuthController (e2e)', () => {
       const cacheManager = app.get<Cache>(CACHE_MANAGER);
       const redisStore = cacheManager as unknown as {
         store?: {
-          client?: { isOpen?: boolean; disconnect: () => Promise<void> };
+          client?: {
+            isOpen?: boolean;
+            disconnect: () => Promise<void>;
+            on: (event: string, cb: (err: any) => void) => void;
+          };
         };
       };
       const client = redisStore.store?.client;
-      if (client && client.isOpen) {
-        await client.disconnect();
+      if (client) {
+        client.on('error', () => {
+          /* ignore socket errors during teardown */
+        });
+        if (client.isOpen) {
+          await client.disconnect();
+        }
       }
       await app.close();
     }
-    if (testEnv) {
-      await testEnv.stop();
-    }
   });
 
-  describe('/api/auth/register (POST)', () => {
-    it('should register a new user', () => {
-      return request(app.getHttpServer())
+  describe('/api/auth', () => {
+    const testUser = {
+      username: `testuser_${Date.now()}`,
+      email: `testuser_${Date.now()}@example.com`,
+      password: 'TestPassword@123',
+      firstName: 'Test',
+      lastName: 'User',
+    };
+
+    it('/api/auth/register (POST) should register a new user', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .post('/api/auth/register')
         .send(testUser)
         .expect(201)
         .expect((res) => {
-          const body = res.body as AuthResponse;
+          const body = res.body as { message: string };
           expect(body.message).toBeDefined();
         });
     });
 
-    it('should fail with invalid data (validation check)', () => {
-      return request(app.getHttpServer())
+    it('/api/auth/register (POST) should fail with invalid data (validation check)', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .post('/api/auth/register')
-        .send({ username: 'short' })
+        .send({
+          username: '',
+          email: 'invalid-email',
+          password: '123',
+        })
         .expect(400);
     });
 
-    it('should optionally fail when registering duplicate user', () => {
-      return request(app.getHttpServer())
+    it('/api/auth/register (POST) should optionally fail when registering duplicate user', async () => {
+      await request(app.getHttpServer() as SupertestApp)
         .post('/api/auth/register')
-        .send(testUser)
-        .expect((res) => {
-          expect(res.status).toBeGreaterThanOrEqual(400);
-        });
-    });
-  });
+        .send({
+          ...testUser,
+          username: 'duplicate_user',
+          email: 'duplicate@example.com',
+        })
+        .expect(201);
 
-  describe('/api/auth/login (POST)', () => {
-    it('should login the user and set cookie', () => {
-      return request(app.getHttpServer())
+      return request(app.getHttpServer() as SupertestApp)
+        .post('/api/auth/register')
+        .send({
+          ...testUser,
+          username: 'duplicate_user',
+          email: 'duplicate@example.com',
+        })
+        .expect(409);
+    });
+
+    it('/api/auth/login (POST) should login the user and set cookie', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .post('/api/auth/login')
         .send({
           username: testUser.username,
@@ -110,19 +104,14 @@ describe('AuthController (e2e)', () => {
         })
         .expect(200)
         .expect((res) => {
-          const body = res.body as AuthResponse;
+          const body = res.body as LoginResponse;
           expect(body.message).toBeDefined();
-          expect(body.user).toBeDefined();
-          expect(body.user?.username).toBe(testUser.username);
-
-          const cookies = res.headers['set-cookie'] as unknown as string[];
-          expect(cookies).toBeDefined();
-          sessionCookie = cookies[0].split(';')[0];
+          expect(res.headers['set-cookie']).toBeDefined();
         });
     });
 
-    it('should fail with wrong password', () => {
-      return request(app.getHttpServer())
+    it('/api/auth/login (POST) should fail with wrong password', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .post('/api/auth/login')
         .send({
           username: testUser.username,
@@ -131,40 +120,61 @@ describe('AuthController (e2e)', () => {
         .expect(401);
     });
 
-    it('should fail with non-existent user', () => {
-      return request(app.getHttpServer())
+    it('/api/auth/login (POST) should fail with non-existent user', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .post('/api/auth/login')
         .send({
-          username: 'doesntexist_anywhere',
-          password: 'Password@123',
+          username: 'nonexistent_user',
+          password: 'SomePassword@123',
         })
         .expect(404);
     });
-  });
 
-  describe('/api/auth/me (GET)', () => {
-    it('should return 401 without cookie', () => {
-      return request(app.getHttpServer()).get('/api/auth/me').expect(401);
+    it('/api/auth/me (GET) should return 401 without cookie', () => {
+      return request(app.getHttpServer() as SupertestApp)
+        .get('/api/auth/me')
+        .expect(401);
     });
 
-    it('should return user profile with cookie', () => {
-      return request(app.getHttpServer())
+    it('/api/auth/me (GET) should return user profile with cookie', async () => {
+      const loginRes = await request(app.getHttpServer() as SupertestApp)
+        .post('/api/auth/login')
+        .send({
+          username: testUser.username,
+          password: testUser.password,
+        });
+
+      const cookies = loginRes.headers['set-cookie'] as unknown as string[];
+      const sessionCookie = cookies[0].split(';')[0];
+
+      return request(app.getHttpServer() as SupertestApp)
         .get('/api/auth/me')
-        .set('Cookie', sessionCookie)
+        .set('Cookie', [sessionCookie])
         .expect(200)
         .expect((res) => {
-          const body = res.body as AuthResponse;
+          const body = res.body as AuthenticatedUser;
           expect(body.username).toBe(testUser.username);
         });
     });
-  });
 
-  describe('/api/auth/logout (POST)', () => {
-    it('should logout and clear session', () => {
-      return request(app.getHttpServer())
+    it('/api/auth/logout (POST) should logout and clear session', async () => {
+      const loginRes = await request(app.getHttpServer() as SupertestApp)
+        .post('/api/auth/login')
+        .send({
+          username: testUser.username,
+          password: testUser.password,
+        });
+
+      const cookies = loginRes.headers['set-cookie'] as unknown as string[];
+      const sessionCookie = cookies[0].split(';')[0];
+
+      return request(app.getHttpServer() as SupertestApp)
         .post('/api/auth/logout')
-        .set('Cookie', sessionCookie)
-        .expect(204);
+        .set('Cookie', [sessionCookie])
+        .expect(204)
+        .expect((res) => {
+          expect(res.headers['set-cookie'][0]).toContain('SESSION_ID=;');
+        });
     });
   });
 });

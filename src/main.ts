@@ -40,7 +40,8 @@ async function bootstrap() {
   app.useLogger(loggerLevels);
 
   const port = appProps.port;
-  const prefix = 'api';
+  const prefix = appProps.contextPath || 'api';
+  const swaggerPrefix = appProps.swaggerpath || 'docs';
 
   app.setGlobalPrefix(prefix);
   app.use(cookieParser());
@@ -61,7 +62,7 @@ async function bootstrap() {
 
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalFilters(new AllExceptionsFilter());
-  setupSwagger(app, prefix);
+  setupSwagger(app, prefix, swaggerPrefix);
 
   // Run migrations manually with detailed logging if enabled in properties
   const dbProps = app.get(DatabaseProperties);
@@ -74,7 +75,7 @@ async function bootstrap() {
 
   await app.listen(port);
   console.log(
-    `BFF application is running on: http://localhost:${port}/${prefix}`,
+    `BFF application is running on: http://localhost:${port}/${prefix}/${swaggerPrefix}`,
   );
 }
 bootstrap().catch((err) => {

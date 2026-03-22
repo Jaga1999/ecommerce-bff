@@ -12,7 +12,11 @@ export class AppProperties extends BaseProperties {
   port: number = 8080;
 
   @IsString()
-  contextPath: string = '/api';
+  contextPath: string = 'api';
+
+  @IsString()
+  @IsOptional()
+  swaggerpath: string = 'docs';
 
   @IsString()
   @IsOptional()
@@ -29,6 +33,7 @@ export class AppProperties extends BaseProperties {
         configService.get<number>('APP_PORT') ||
         configService.get<number>('PORT'),
       contextPath: configService.get<string>('BFF_CONTEXT_PATH'),
+      swaggerpath: configService.get<string>('SWAGGER_PATH'),
       frontendUrl: configService.get<string>('FRONTEND_URL'),
       dashboardUrl: configService.get<string>('DASHBOARD_URL'),
     });

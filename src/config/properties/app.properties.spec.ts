@@ -49,7 +49,7 @@ describe('AppProperties', () => {
 
     expect(props.nodeEnv).toBe('development');
     expect(props.port).toBe(8080); // Default from AppProperties
-    expect(props.contextPath).toBe('/api'); // Default from AppProperties
+    expect(props.contextPath).toBe('api'); // Default from AppProperties
   });
 
   it('should throw InternalServerErrorException on invalid port', () => {

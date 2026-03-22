@@ -1,64 +1,43 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import cookieParser from 'cookie-parser';
-
+import { App as SupertestApp } from 'supertest/types';
+import { Todo } from '../src/todos/todo.entity';
 import { TestEnvironment } from './test-setup';
-import { createTestingModuleWithContainers } from './e2e-util';
-
-interface TodoResponse {
-  id?: string;
-  title?: string;
-  description?: string;
-}
+import { createAppWithContainers } from './e2e-util';
 
 describe('TodosController (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication;
   let testEnv: TestEnvironment;
   let sessionCookie: string;
   let todoId: string;
 
-  const testUser = {
-    username: `todo_tester_${Date.now()}`,
-    email: `todo_tester_${Date.now()}@example.com`,
-    password: 'Password@123',
-    firstName: 'Todo',
-    lastName: 'Tester',
-  };
-
   beforeAll(async () => {
     testEnv = new TestEnvironment();
-    const moduleBuilder = await createTestingModuleWithContainers(testEnv);
-    const moduleFixture = await moduleBuilder.compile();
+    app = await createAppWithContainers(testEnv);
 
-    app = moduleFixture.createNestApplication();
+    // Create a test user and login to get session cookie
+    const testUser = {
+      username: `testuser_${Date.now()}`,
+      email: `testuser_${Date.now()}@example.com`,
+      password: 'TestPassword@123',
+      firstName: 'Test',
+      lastName: 'User',
+    };
 
-    // Setup identical to main.ts
-    app.setGlobalPrefix('api');
-    app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-
-    await app.init();
-
-    // Register and login to get session cookie
-    await request(app.getHttpServer())
+    await request(app.getHttpServer() as SupertestApp)
       .post('/api/auth/register')
-      .send(testUser);
+      .send(testUser)
+      .expect(201);
 
-    const loginRes = await request(app.getHttpServer())
+    const loginRes = await request(app.getHttpServer() as SupertestApp)
       .post('/api/auth/login')
       .send({
         username: testUser.username,
         password: testUser.password,
-      });
+      })
+      .expect(200);
 
     const cookies = loginRes.headers['set-cookie'] as unknown as string[];
     sessionCookie = cookies[0].split(';')[0];
@@ -69,84 +48,94 @@ describe('TodosController (e2e)', () => {
       const cacheManager = app.get<Cache>(CACHE_MANAGER);
       const redisStore = cacheManager as unknown as {
         store?: {
-          client?: { isOpen?: boolean; disconnect: () => Promise<void> };
+          client?: {
+            isOpen?: boolean;
+            disconnect: () => Promise<void>;
+            on: (event: string, cb: (err: any) => void) => void;
+          };
         };
       };
       const client = redisStore.store?.client;
-      if (client && client.isOpen) {
-        await client.disconnect();
+      if (client) {
+        client.on('error', () => {
+          /* ignore socket errors during teardown */
+        });
+        if (client.isOpen) {
+          await client.disconnect();
+        }
       }
       await app.close();
     }
-    if (testEnv) {
-      await testEnv.stop();
-    }
   });
 
-  describe('/api/todos (POST)', () => {
-    it('should create a new todo', () => {
-      return request(app.getHttpServer())
+  describe('/api/todos', () => {
+    it('/api/todos (POST) should create a new todo', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .post('/api/todos')
-        .set('Cookie', sessionCookie)
+        .set('Cookie', [sessionCookie])
         .send({
           title: 'Test Todo',
           description: 'Test Description',
         })
         .expect(201)
         .expect((res) => {
-          const body = res.body as TodoResponse;
+          const body = res.body as Todo;
           expect(body.title).toBe('Test Todo');
           expect(body.id).toBeDefined();
-          todoId = body.id as string;
+          todoId = body.id;
         });
     });
-  });
 
-  describe('/api/todos (GET)', () => {
-    it('should get all todos for user', () => {
-      return request(app.getHttpServer())
+    it('/api/todos (GET) should return all todos for user', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .get('/api/todos')
-        .set('Cookie', sessionCookie)
+        .set('Cookie', [sessionCookie])
         .expect(200)
         .expect((res) => {
-          const body = res.body as TodoResponse[];
+          const body = res.body as Todo[];
           expect(Array.isArray(body)).toBe(true);
-          expect(body.length).toBeGreaterThanOrEqual(1);
+          expect(body.length).toBeGreaterThan(0);
         });
     });
-  });
 
-  describe('/api/todos/:id (GET)', () => {
-    it('should get a specific todo', () => {
-      return request(app.getHttpServer())
+    it('/api/todos/:id (GET) should return a specific todo', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .get(`/api/todos/${todoId}`)
-        .set('Cookie', sessionCookie)
+        .set('Cookie', [sessionCookie])
         .expect(200)
         .expect((res) => {
-          const body = res.body as TodoResponse;
+          const body = res.body as Todo;
           expect(body.id).toBe(todoId);
+          expect(body.title).toBe('Test Todo');
         });
     });
-  });
 
-  describe('/api/todos/:id (PATCH)', () => {
-    it('should update a specific todo', () => {
-      return request(app.getHttpServer())
+    it('/api/todos/:id (PATCH) should update a todo', () => {
+      return request(app.getHttpServer() as SupertestApp)
         .patch(`/api/todos/${todoId}`)
-        .set('Cookie', sessionCookie)
+        .set('Cookie', [sessionCookie])
         .send({
           title: 'Updated Todo',
         })
+        .expect(200)
+        .expect((res) => {
+          const body = res.body as Todo;
+          expect(body.title).toBe('Updated Todo');
+        });
+    });
+
+    it('/api/todos/:id (DELETE) should delete a todo', () => {
+      return request(app.getHttpServer() as SupertestApp)
+        .delete(`/api/todos/${todoId}`)
+        .set('Cookie', [sessionCookie])
         .expect(200);
     });
-  });
 
-  describe('/api/todos/:id (DELETE)', () => {
-    it('should delete a specific todo', () => {
-      return request(app.getHttpServer())
-        .delete(`/api/todos/${todoId}`)
-        .set('Cookie', sessionCookie)
-        .expect(200);
+    it('/api/todos/:id (GET) should return 404 after deletion', () => {
+      return request(app.getHttpServer() as SupertestApp)
+        .get(`/api/todos/${todoId}`)
+        .set('Cookie', [sessionCookie])
+        .expect(404);
     });
   });
 });
