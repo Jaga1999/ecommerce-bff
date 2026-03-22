@@ -15,11 +15,14 @@ import { Todo } from './todos/todo.entity';
 import { APP_GUARD } from '@nestjs/core';
 import { SessionGuard } from './common/guards/session.guard';
 import { MigrationService } from './database/migration.service';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env'],
     }),
     ConfigPropertiesModule,
     TypeOrmModule.forRootAsync({
@@ -52,7 +55,9 @@ import { MigrationService } from './database/migration.service';
     UsersModule,
     TodosModule,
   ],
+  controllers: [AppController],
   providers: [
+    AppService,
     {
       provide: APP_GUARD,
       useClass: SessionGuard,
